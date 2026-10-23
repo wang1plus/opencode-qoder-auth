@@ -1,0 +1,6 @@
+.opencode/
+node_modules/
+dist/
+docs/
+*.tgz
+.idea
