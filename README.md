@@ -351,6 +351,14 @@ npm run build
 opencode
 ```
 
+## 致谢
+
+本项目的插件架构与 Qoder 线路实现参考了以下开源项目，感谢作者们的开源工作：
+
+- [dsh-codebuddy-auth](https://github.com/cainiao1992/dsh-codebuddy-auth) — DeepSeek Harness 的 CodeBuddy provider 插件，本项目的 provider 注册、凭据管理和模型同步思路来源于此。
+- [opencode-codebuddy-auth](https://github.com/wang1plus/opencode-codebuddy-auth) — OpenCode v2 插件结构的直接模板。
+- [dsh-provider-qoder](https://github.com/minglu6/dsh-provider-qoder) — Qoder CN 的 PAT 交换、COSY 签名、WAF 编码和双层 SSE 实现参考。
+
 ## 许可证
 
 MIT
