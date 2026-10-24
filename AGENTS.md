@@ -20,7 +20,7 @@ npm test           # npm run compile && node --test test/*.test.mjs
 
 - 测试直接导入 `dist/*.js`，因此必须先构建；`npm test` 已包含编译。
 - 当前 52 个测试，覆盖编码、COSY、推理拆分、模型目录、token 缓存、请求构造、SSE 转换和插件端到端流程。
-- 无 lint、无 CI。
+- 无 lint。CI 见 `.github/workflows/ci.yml`：typecheck + 测试；main 上自动补提交 `dist/`，分支/PR 上校验 `dist/` 是否与源码同步。
 - `src/index.ts` → `dist/index.js`（tsc）；`src/tui.tsx` → `dist/tui.js`（`build.tui.mjs`，external 为 `@opencode/*`、`@opentui/*`、`solid-js`）。
 
 ## 架构要点
