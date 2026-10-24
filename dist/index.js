@@ -11,6 +11,8 @@ import { Integration, Plugin, Provider, } from "@opencode/plugin";
 import { getMachineId, getQoderCNPat, isQoderPatValue, resolveQoderEndpoints, } from "./cosy.js";
 import { QoderError, errorCodeOf, isAuthExpiredDetail, isAuthExpiredStatus, upstreamErrorDetail, } from "./errors.js";
 import { fetchQoderModelCatalog, qoderModelToInfo, } from "./models.js";
+import { fetchQoderBalance, unavailableBalance } from "./quota.js";
+import { qoderBalanceRpc } from "./rpc.js";
 import { buildQoderChatRequest, resignQoderRequest, } from "./request.js";
 import { invalidateJobToken } from "./session.js";
 import { peekQoderSseAuth, transformQoderResponse, } from "./stream.js";
@@ -173,6 +175,23 @@ export default Plugin.define({
         await applyProviderTransform();
         currentModels = (await refreshModelSource(ctx)) ?? currentModels;
         await applyProviderTransform();
+        // The TUI cannot reach the credential store, so the balance is served over
+        // the plugin RPC channel. Registering here means `configuredBaseURL` has
+        // already been captured and public/VPC routing matches model discovery.
+        await ctx.rpc.register(qoderBalanceRpc, {
+            balance: async (_input, call) => {
+                const pat = await resolveCurrentPat(ctx);
+                if (!pat) {
+                    return unavailableBalance("未登录 Qoder，请先执行 `opencode auth login qoder`");
+                }
+                if (!isQoderPatValue(pat)) {
+                    return unavailableBalance("Qoder 需要个人访问令牌 (pt-...)，请重新登录");
+                }
+                return fetchQoderBalance(pat, resolveQoderEndpoints(configuredBaseURL), {
+                    signal: call.signal,
+                });
+            },
+        });
         await ctx.integration.transform((editor) => {
             editor.update(PROVIDER_ID, (integration) => {
                 integration.name = PROVIDER_NAME;

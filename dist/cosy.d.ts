@@ -65,6 +65,13 @@ export declare function qoderUserInfoUrl(endpoints: QoderCnEndpoints): string;
 export declare function qoderChatUrl(endpoints: QoderCnEndpoints): string;
 /** Model-catalog endpoint used by discovery. */
 export declare function qoderModelListUrl(endpoints: QoderCnEndpoints): string;
+/**
+ * Credit-balance endpoint. Plain `Bearer <job token>` authentication; unlike
+ * the gateway it takes no COSY signature and no envelope encoding.
+ */
+export declare function qoderQuotaUrl(endpoints: QoderCnEndpoints): string;
+/** Subscription-plan endpoint, used only to label the balance. */
+export declare function qoderPlanUrl(endpoints: QoderCnEndpoints): string;
 /** The path portion the gateway signs, with the `/algo` prefix stripped. */
 export declare function computeQoderSigPath(urlStr: string): string;
 /**
