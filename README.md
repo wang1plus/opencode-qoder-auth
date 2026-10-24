@@ -28,6 +28,8 @@ opencode plugin add github:wang1plus/opencode-qoder-auth
 opencode plugin update github:wang1plus/opencode-qoder-auth
 ```
 
+> 仓库里的 `dist/` 由 CI 构建并提交（见 `.github/workflows/ci.yml`）。合入 main 后 `dist-commit` 作业需要一两分钟才落地，所以刚合并的极短时间内 git 安装拿到的仍是旧产物；打 tag 或发布版本请等这个作业跑完。
+
 ### 三种配置方式，任选其一
 
 #### 方式一：只加插件（推荐）
@@ -207,15 +209,7 @@ opencode
 
 TUI 侧边栏展示当前账号的 Qoder 模型目录（默认折叠，点击标题展开）。将鼠标移到模型名称上时显示详情（推理/工具/图片/上下文/输出限制、默认推理强度）。基于 v2 `ui.slot` 渲染，不跟踪当前选择。
 
-使用 `opencode plugin add` 安装后 TUI 会自动启用（写入 `tui.json` 的 `plugin` 数组）。也可手动配置，在 `~/.config/opencode/tui.json`（或项目 `.opencode/tui.json`）加入：
-
-```json
-{
-  "plugin": ["github:wang1plus/opencode-qoder-auth"]
-}
-```
-
-修改配置后需要完全退出并重新启动 OpenCode。
+在 `opencode.json(c)` 的 `plugins` 里声明本插件即可，包导出了 `./tui`，CLI 会自动加载对应的 TUI 组件，**不需要**再往 `cli.json` 或 `tui.json` 里重复添加。修改配置后需要完全退出并重新启动 OpenCode。
 
 ## 工作原理
 
@@ -308,7 +302,7 @@ PAT 被撤销、过期或账号无权限时会返回这类错误。插件会自�
 
 ### TUI 侧边栏不显示
 
-1. 确认 `tui.json` 的 `plugin` 数组包含本插件。
+1. 确认 `opencode.json(c)` 的 `plugins` 里有本插件（导出 `./tui` 的包会被 CLI 自动加载，无需 `tui.json`）。
 2. 完全退出并重新启动 OpenCode（不是仅关闭会话）。
 3. 先确认 `opencode models` 中已有 qoder 模型。
 
@@ -320,6 +314,10 @@ npm run compile      # tsc 编译到 dist/ + esbuild 打包 TUI -> dist/tui.js
 npm run typecheck  # 仅类型检查
 npm test           # 构建后运行 node:test 测试
 ```
+
+`dist/` 是生成物，由 main 分支上的 CI 作业构建并提交。**不要手工 `git add dist`**，本地 `npm run compile` 只用于跑测试和联调。
+
+> `package.json` 里不能有 `build` 或 `prepare` 脚本：bun 安装 git 依赖时会执行 `prepare`（没有则回退 `build`），而 OpenCode 内嵌运行时里这一步必然失败（`NpmInstallFailedError: git dep preparation failed`）。所以构建脚本命名为 `compile`。
 
 源码结构：
 
@@ -337,17 +335,24 @@ npm test           # 构建后运行 node:test 测试
 | `src/errors.ts` | 错误分类与 401/403 / `code 105` 判定 |
 | `src/tui.tsx` | TUI 侧边栏模型目录 |
 
-### 本地加载
+### 本地联调
 
-OpenCode v2 的插件加载器支持 npm registry 或 git spec，`file://` 和 `.opencode/plugin.ts` 写法不会被加载。本地联调建议：
+OpenCode v2 的 `plugins` 支持直接写目录（相对路径、绝对路径、`file://` 都行），入口按 `<目录>/index.ts` 解析，TS 源码由宿主直接加载，**不需要构建**：
 
-1. 推送到 Git 仓库后 `opencode plugin add github:wang1plus/opencode-qoder-auth`；
-2. 或将构建产物替换到已解析的缓存包（npm 安装位于 `~/.cache/opencode/npm/`，git 安装位于 `~/.cache/opencode/git/`）。
+```jsonc
+{
+  "plugins": ["/home/me/code_wares/opencode-qoder-auth/src"]
+}
+```
 
-修改源码后重新构建并完全退出重启 OpenCode：
+注意两点（均为 v2.1.4 实测）：
+
+- 指向仓库根目录不会生效，因为根下没有 `index.ts`；要指向 `src` 或 `dist`。
+- git / npm spec 每次启动都会走宿主自带的安装器重装，手工替换缓存内容不靠谱。git 安装落在 `~/.cache/opencode/npm/git-<包名>-<hash>/<时间戳>/node_modules/<包名>/`，仅用于排查。
+
+改源码后需要完全退出并重新启动 OpenCode：
 
 ```bash
-npm run compile
 opencode
 ```
 

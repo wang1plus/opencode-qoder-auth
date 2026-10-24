@@ -20,7 +20,7 @@ npm test           # npm run compile && node --test test/*.test.mjs
 
 - 测试直接导入 `dist/*.js`，因此必须先构建；`npm test` 已包含编译。
 - 当前 52 个测试，覆盖编码、COSY、推理拆分、模型目录、token 缓存、请求构造、SSE 转换和插件端到端流程。
-- 无 lint。CI 见 `.github/workflows/ci.yml`：typecheck + 测试；main 上自动补提交 `dist/`，分支/PR 上校验 `dist/` 是否与源码同步。
+- 无 lint。CI 见 `.github/workflows/ci.yml`：PR 只跑 typecheck + 测试；`dist/` 由 main 上的 CI 作业自动构建并提交，人和 PR 都不要提交构建产物。
 - `src/index.ts` → `dist/index.js`（tsc）；`src/tui.tsx` → `dist/tui.js`（`build.tui.mjs`，external 为 `@opencode/*`、`@opentui/*`、`solid-js`）。
 
 ## 架构要点
@@ -118,7 +118,8 @@ npm test           # npm run compile && node --test test/*.test.mjs
 
 ## 已知坑 / 注意点
 
-- **不要用 `build` / `prepare` 作为脚本名**：bun 安装 git 依赖时会执行 `prepare`（没有时回退 `build`），而 opencode 内嵌运行环境里这一步必然失败，报 `NpmInstallFailedError: git dep preparation failed`。构建脚本命名为 `compile`，且 `dist/` 必须提交进仓库（git 安装不会构建）。
+- **不要用 `build` / `prepare` 作为脚本名**：bun 安装 git 依赖时会执行 `prepare`（没有时回退 `build`），而 opencode 内嵌运行环境里这一步必然失败，报 `NpmInstallFailedError: git dep preparation failed`。构建脚本命名为 `compile`。
+- **`dist/` 只能由 CI 提交**：git 安装不会构建，仓库里必须有 `dist/`，但它属于生成物。本地 `npm run compile` 只为跑测试和联调，不要 `git add dist`；main 合入后 `dist-commit` 作业会自动构建并推送（带 `[skip ci]`）。因此刚合入的几分钟内 main 上的 `dist/` 可能落后于 `src/`，打 tag 或对外宣称版本时要等这个作业跑完。
 - **`[DONE]` 必须绕过 `terminal` 守卫**：`stream.ts` 的 `enqueue` 在 `terminal` 为 true 后丢弃数据；终止哨兵用单独的 `emitDone()` 直接 `controller.enqueue`。
 - **SSE 首帧探测必须等到换行**：首个网络 chunk 可能把 `data:` JSON 截断；`peekQoderSseAuth` 先累积到出现 `\n` 再解析，EOF 时再做一次兜底解析。
 - **OpenCode OpenAI Chat 解析器要求 `finish_reason`**（`requireFinishReason: true`）：转换器必须在结束前显式发出 `finish_reason`，否则宿主报错。
@@ -139,5 +140,5 @@ npm test           # npm run compile && node --test test/*.test.mjs
 - OpenCode v2.1.4，命令 `opencode`。
 - npm registry 使用国内镜像 `https://registry.npmmirror.com`。
 - remote 为 `git@github.com:wang1plus/opencode-qoder-auth`，README 的安装地址 `github:wang1plus/opencode-qoder-auth` 与实际一致。
-- 安装走 git spec；`dist/` 已提交进仓库，改完源码要么本地 `npm run compile` 一起提交，要么交给 CI 自动补。
+- 安装走 git spec（`github:wang1plus/opencode-qoder-auth`）；`dist/` 是 CI 维护的生成物，不要手工提交。
 - 所有源码与文档改动默认保持未提交，提交前检查 `git status`。

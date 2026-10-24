@@ -1,5 +1,8 @@
 name: CI
 
+# dist/ 由 CI 独占维护：人不提交构建产物，main 合入后由 dist-commit 作业构建并推送。
+# PR 只跑 test（npm test 内部会先 compile，用的是当次构建结果，不依赖仓库里的 dist）。
+
 on:
   push:
     branches: [main]
@@ -26,27 +29,6 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-
-  dist-fresh:
-    # main 上的 dist 由 dist-commit 自动补；分支和 PR 上只做校验
-    if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run compile
-      - name: Check dist matches src
-        run: |
-          if [ -n "$(git status --porcelain -- dist)" ]; then
-            echo "::error::dist/ 与源码不同步，请本地运行 npm run compile 并提交 dist/"
-            git --no-pager diff --stat -- dist
-            exit 1
-          fi
 
   dist-commit:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -1,0 +1,2 @@
+# dist/ 是 CI 生成的安装产物，PR 里折叠显示，避免被当成人工改动
+/dist/** linguist-generated=true
