@@ -22,7 +22,7 @@ OpenCode v2 插件，用于 Qoder 国内版（Qoder CN）认证。使用个人�
 opencode plugin add github:wang1plus/opencode-qoder-auth
 ```
 
-默认跟随仓库默认分支更新，服务器启动时会自动检查更新；如需固定版本，可追加 `#<分支|标签|commit>`，例如 `github:wang1plus/opencode-qoder-auth#v2.0.0`。手动更新已安装的插件：
+默认跟随仓库默认分支更新，服务器启动时会自动检查更新；如需固定版本，可追加 `#<分支|标签|commit>`，例如 `github:wang1plus/opencode-qoder-auth#v2.0.1`（tag 由下面的发布流程创建）。手动更新已安装的插件：
 
 ```bash
 opencode plugin update github:wang1plus/opencode-qoder-auth
@@ -305,6 +305,24 @@ PAT 被撤销、过期或账号无权限时会返回这类错误。插件会自�
 1. 确认 `opencode.json(c)` 的 `plugins` 里有本插件（导出 `./tui` 的包会被 CLI 自动加载，无需 `tui.json`）。
 2. 完全退出并重新启动 OpenCode（不是仅关闭会话）。
 3. 先确认 `opencode models` 中已有 qoder 模型。
+
+## 发布
+
+发布走 `.github/workflows/release.yml`，一次运行完成：测试 → 提升版本号 → 重新构建 `dist/` → 提交 → 打 tag → 创建 GitHub Release（自动生成 release notes）。
+
+在 GitHub 的 Actions → Release → Run workflow，选择版本变化：
+
+| 选项 | 行为 |
+|------|------|
+| `current` | 不升版本，给当前 `package.json` 版本打 tag |
+| `patch` / `minor` / `major` | `npm version` 升版本，生成 `chore: release vX.Y.Z` 提交 |
+
+约束与行为：
+
+- 只能从 `main` 触发，其它分支的运行会被跳过。
+- 发布提交会把当时的 `dist/` 重新编译并一起提交，所以不需要等 main 上的 `dist-commit` 跑完。
+- tag 已存在会直接失败，不会覆盖已有版本。
+- 发布后 `opencode plugin update github:wang1plus/opencode-qoder-auth` 拉到就是该提交；需要固定版本时用 `#vX.Y.Z`。
 
 ## 开发
 

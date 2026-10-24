@@ -1,0 +1,102 @@
+name: Release
+
+# 手动触发一次即可完成：测试 → 提升版本号 → 重新构建 dist → 提交 → 打 tag → 创建 GitHub Release。
+# 发布流程会把「当前 HEAD 上的 dist」重新编译并合并进 release 提交，因此不需要等 main 上的 dist-commit 跑完。
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "版本变化（current 只给当前 package.json 版本打 tag）"
+        type: choice
+        default: patch
+        options: [current, patch, minor, major]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Bump version, rebuild dist and tag
+        id: cut
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          bump="${{ inputs.bump }}"
+          if [ "$bump" = "current" ]; then
+            tag="v$(node -p "require('./package.json').version")"
+          else
+            tag="$(npm version "$bump" --no-git-tag-version)"
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag 已存在，请换一个版本"
+            exit 1
+          fi
+
+          npm run compile
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "chore: release $tag"
+          fi
+
+          git tag -a "$tag" -m "$tag"
+          git push origin HEAD:main
+          git push origin "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the tagged tree is consistent
+        env:
+          TAG: ${{ steps.cut.outputs.tag }}
+        run: |
+          set -euo pipefail
+          npm run compile
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            echo "::error::dist/ 与源码不同步"
+            git --no-pager diff --stat -- dist
+            exit 1
+          fi
+          version="$(node -p "require('./package.json').version")"
+          if [ "$version" != "${TAG#v}" ]; then
+            echo "::error::package.json 版本 $version 与 tag $TAG 不一致"
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.cut.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG 已存在，仅同步标题"
+            gh release edit "$TAG" --title "$TAG"
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              --verify-tag
+          fi
