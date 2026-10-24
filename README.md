@@ -316,7 +316,7 @@ PAT 被撤销、过期或账号无权限时会返回这类错误。插件会自�
 
 ```bash
 npm install
-npm run build      # tsc 编译到 dist/ + esbuild 打包 TUI -> dist/tui.js
+npm run compile      # tsc 编译到 dist/ + esbuild 打包 TUI -> dist/tui.js
 npm run typecheck  # 仅类型检查
 npm test           # 构建后运行 node:test 测试
 ```
@@ -347,7 +347,7 @@ OpenCode v2 的插件加载器支持 npm registry 或 git spec，`file://` 和 `
 修改源码后重新构建并完全退出重启 OpenCode：
 
 ```bash
-npm run build
+npm run compile
 opencode
 ```
 

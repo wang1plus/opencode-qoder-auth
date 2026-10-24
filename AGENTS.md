@@ -13,12 +13,12 @@ provider ID、integration ID 均为 `qoder`；登录命令为 `opencode auth log
 
 ```bash
 npm install
-npm run build      # tsc 编译到 dist/ + esbuild 打包 TUI -> dist/tui.js
+npm run compile      # tsc 编译到 dist/ + esbuild 打包 TUI -> dist/tui.js
 npm run typecheck  # 仅类型检查
-npm test           # npm run build && node --test test/*.test.mjs
+npm test           # npm run compile && node --test test/*.test.mjs
 ```
 
-- 测试直接导入 `dist/*.js`，因此必须先构建；`npm test` 已包含构建。
+- 测试直接导入 `dist/*.js`，因此必须先构建；`npm test` 已包含编译。
 - 当前 52 个测试，覆盖编码、COSY、推理拆分、模型目录、token 缓存、请求构造、SSE 转换和插件端到端流程。
 - 无 lint、无 CI。
 - `src/index.ts` → `dist/index.js`（tsc）；`src/tui.tsx` → `dist/tui.js`（`build.tui.mjs`，external 为 `@opencode/*`、`@opentui/*`、`solid-js`）。
@@ -109,7 +109,7 @@ npm test           # npm run build && node --test test/*.test.mjs
 
 ## 测试约定
 
-- 测试从 `../dist/*.js` 导入，修改源码后必须 `npm run build`。
+- 测试从 `../dist/*.js` 导入，修改源码后必须 `npm run compile`。
 - 测试会替换 `globalThis.fetch`；使用 `clearQoderSessionCaches()` 清理模块级 token/identity 缓存。
 - `test/plugin.test.mjs` 用 mock context 模拟 `provider.transform`、`integration.transform`、`session.hook`、`event.subscribe`。
 - mock 的 `provider.transform` 是同步立即执行的；真实宿主可能延迟执行，但两遍 transform 的设计对两种时序都成立。
@@ -118,6 +118,7 @@ npm test           # npm run build && node --test test/*.test.mjs
 
 ## 已知坑 / 注意点
 
+- **不要用 `build` / `prepare` 作为脚本名**：bun 安装 git 依赖时会执行 `prepare`（没有时回退 `build`），而 opencode 内嵌运行环境里这一步必然失败，报 `NpmInstallFailedError: git dep preparation failed`。构建脚本命名为 `compile`，且 `dist/` 必须提交进仓库（git 安装不会构建）。
 - **`[DONE]` 必须绕过 `terminal` 守卫**：`stream.ts` 的 `enqueue` 在 `terminal` 为 true 后丢弃数据；终止哨兵用单独的 `emitDone()` 直接 `controller.enqueue`。
 - **SSE 首帧探测必须等到换行**：首个网络 chunk 可能把 `data:` JSON 截断；`peekQoderSseAuth` 先累积到出现 `\n` 再解析，EOF 时再做一次兜底解析。
 - **OpenCode OpenAI Chat 解析器要求 `finish_reason`**（`requireFinishReason: true`）：转换器必须在结束前显式发出 `finish_reason`，否则宿主报错。

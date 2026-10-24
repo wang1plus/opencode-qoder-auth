@@ -20,10 +20,10 @@
     }
   },
   "scripts": {
-    "build": "tsc && node build.tui.mjs",
+    "compile": "tsc && node build.tui.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test test/*.test.mjs",
-    "prepublishOnly": "npm run build"
+    "test": "npm run compile && node --test test/*.test.mjs",
+    "prepublishOnly": "npm run compile"
   },
   "peerDependencies": {
     "@opencode/plugin": "^2.1.4",
