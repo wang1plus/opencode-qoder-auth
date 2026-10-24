@@ -1,6 +1,6 @@
 # opencode-qoder-auth
 
-OpenCode v2 插件，用于 Qoder 国内版（Qoder CN）认证。使用个人访问令牌（PAT，`pt-...`）登录后，即可在 OpenCode 中使用 Qoder 的对话模型。插件会自动从 `/algo/api/v2/model/list` 发现账号可用模型，处理 Qoder 的 COSY 签名、WAF 编码和双层 SSE 流，并在 TUI 侧边栏提供模型目录。
+OpenCode v2 插件，用于 Qoder 国内版（Qoder CN）认证。使用个人访问令牌（PAT，`pt-...`）登录后，即可在 OpenCode 中使用 Qoder 的对话模型。插件会自动从 `/algo/api/v2/model/list` 发现账号可用模型，处理 Qoder 的 COSY 签名、WAF 编码和双层 SSE 流，并在 TUI 侧边栏显示当前积分余额。
 
 > **V2 版本**：本插件基于 OpenCode v2（`@opencode/plugin`，`Plugin.define` + Promise API）。V1 的 `config` / `auth` / loader hooks 不会被 v2 宿主加载。
 
@@ -207,7 +207,11 @@ opencode
 
 ## TUI 侧边栏
 
-TUI 侧边栏展示当前账号的 Qoder 模型目录（默认折叠，点击标题展开）。将鼠标移到模型名称上时显示详情（推理/工具/图片/上下文/输出限制、默认推理强度）。基于 v2 `ui.slot` 渲染，不跟踪当前选择。
+TUI 侧边栏展示当前账号的 **Qoder 积分余额**：剩余积分、已用/总量、使用进度条，以及套餐名（如 `Free`）。多出团队共享池时额外标注「共享额度」，额度耗尽时标注「额度已用尽」。
+
+余额来自 `GET {openapi}/api/v2/quota/usage`（普通 `Bearer <job token>`，无需 COSY 签名），套餐名来自 `/api/v2/user/plan`。TUI 进程不接触凭据，查询通过插件 RPC（`qoder-auth` / `balance`）交给 server 端执行，复用已有的 PAT → job token 缓存。
+
+刷新时机：打开面板、每 5 分钟、凭据变更（`credential.updated` / `credential.switched`）、当前会话进入空闲（`session.idle`，即一轮对话结束）；点击标题可手动刷新。查询失败时显示错误原因，不会展示过期数值。
 
 在 `opencode.json(c)` 的 `plugins` 里声明本插件即可，包导出了 `./tui`，CLI 会自动加载对应的 TUI 组件，**不需要**再往 `cli.json` 或 `tui.json` 里重复添加。修改配置后需要完全退出并重新启动 OpenCode。
 
@@ -226,6 +230,9 @@ OpenCode v2 插件 (@opencode/plugin, Plugin.define)
   ├─ setup → ctx.integration.transform
   │           注册 "key" 方法（PAT pt-...）与 "env" 方法
   │           （QODERCN_PERSONAL_ACCESS_TOKEN / QODERCN_PAT / QODER_API_KEY）
+  ├─ ctx.rpc.register(qoder-auth / balance)
+  │           TUI 侧边栏积分余额查询：PAT → job token → GET /api/v2/quota/usage
+  │           （普通 Bearer，无需 COSY），再取 /api/v2/user/plan 的套餐名
   ├─ ctx.session.hook("http.request", …, { providerID: "qoder" })
   │           读取宿主注入的 bearer（PAT），缺失时回退 connection.resolve()
   │           OpenAI Chat body → Qoder agent envelope
@@ -304,7 +311,8 @@ PAT 被撤销、过期或账号无权限时会返回这类错误。插件会自�
 
 1. 确认 `opencode.json(c)` 的 `plugins` 里有本插件（导出 `./tui` 的包会被 CLI 自动加载，无需 `tui.json`）。
 2. 完全退出并重新启动 OpenCode（不是仅关闭会话）。
-3. 先确认 `opencode models` 中已有 qoder 模型。
+3. 先确认 `opencode models` 中已有 qoder 模型；未登录时侧边栏显示「未登录 Qoder」而不是余额。
+4. 侧边栏显示「额度请求超时」或 HTTP 错误时，确认 `openapi.qoder.com.cn`（或 VPC 的 `-openapi` 主机）可达——余额接口走 OpenAPI，不走 gateway。
 
 ## 发布
 
@@ -346,12 +354,14 @@ npm test           # 构建后运行 node:test 测试
 | `src/pat.ts` | PAT → job token 交换、refresh、userinfo |
 | `src/session.ts` | job token / identity 进程内缓存与保守轮换 |
 | `src/models.ts` | 模型目录解析、`/model/list` 发现、OpenCode `Model.Info` 映射 |
+| `src/quota.ts` | `/quota/usage` 积分余额查询、多额度池聚合、套餐名 |
+| `src/rpc.ts` | server 与 TUI 共享的 RPC 契约（`qoder-auth` / `balance`） |
 | `src/request.ts` | OpenAI body → Qoder envelope、WAF 编码、COSY 签名、重签 |
 | `src/stream.ts` | Qoder 双层 SSE → OpenAI SSE、认证过期探测、空/不完整响应保护 |
 | `src/qoder-encoding.ts` | WAF body 编解码 |
 | `src/thinking-parser.ts` | `<thinking>` 等标签的流式推理拆分 |
 | `src/errors.ts` | 错误分类与 401/403 / `code 105` 判定 |
-| `src/tui.tsx` | TUI 侧边栏模型目录 |
+| `src/tui.tsx` | TUI 侧边栏积分余额面板 |
 
 ### 本地联调
 

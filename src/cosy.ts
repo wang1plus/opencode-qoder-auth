@@ -242,6 +242,19 @@ export function qoderModelListUrl(endpoints: QoderCnEndpoints): string {
   return `${endpoints.gateway}/algo/api/v2/model/list`;
 }
 
+/**
+ * Credit-balance endpoint. Plain `Bearer <job token>` authentication; unlike
+ * the gateway it takes no COSY signature and no envelope encoding.
+ */
+export function qoderQuotaUrl(endpoints: QoderCnEndpoints): string {
+  return `${endpoints.openapi}/api/v2/quota/usage`;
+}
+
+/** Subscription-plan endpoint, used only to label the balance. */
+export function qoderPlanUrl(endpoints: QoderCnEndpoints): string {
+  return `${endpoints.openapi}/api/v2/user/plan`;
+}
+
 function rsaEncryptBase64(data: string): string {
   const encrypted = crypto.publicEncrypt(
     { key: QODER_RSA_PUBLIC_KEY, padding: crypto.constants.RSA_PKCS1_PADDING },

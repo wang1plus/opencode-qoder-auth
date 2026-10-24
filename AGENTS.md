@@ -4,8 +4,8 @@
 
 OpenCode v2 插件，为 Qoder 国内版（Qoder CN）提供 PAT 认证、动态模型发现、COSY 签名请求和双层 SSE 转换。双入口：
 
-- `src/index.ts` — server 插件（provider / integration / session hooks）
-- `src/tui.tsx` — TUI 侧边栏插件（模型目录）
+- `src/index.ts` — server 插件（provider / integration / RPC / session hooks）
+- `src/tui.tsx` — TUI 侧边栏插件（积分余额）
 
 provider ID、integration ID 均为 `qoder`；登录命令为 `opencode auth login qoder`。
 
@@ -19,7 +19,7 @@ npm test           # npm run compile && node --test test/*.test.mjs
 ```
 
 - 测试直接导入 `dist/*.js`，因此必须先构建；`npm test` 已包含编译。
-- 当前 52 个测试，覆盖编码、COSY、推理拆分、模型目录、token 缓存、请求构造、SSE 转换和插件端到端流程。
+- 当前 62 个测试，覆盖编码、COSY、推理拆分、模型目录、积分余额、token 缓存、请求构造、SSE 转换和插件端到端流程。
 - 无 lint。CI 见 `.github/workflows/ci.yml`：PR 只跑 typecheck + 测试；`dist/` 由 main 上的 CI 作业自动构建并提交，人和 PR 都不要提交构建产物。
 - 发布见 `.github/workflows/release.yml`（手动 dispatch，`bump` 可选 `current`/`patch`/`minor`/`major`）：测试 → 升版本 → 重编译 `dist/` → 提交 → 打 tag → 建 Release。仅限 `main`，tag 冲突会失败。
 - `src/index.ts` → `dist/index.js`（tsc）；`src/tui.tsx` → `dist/tui.js`（`build.tui.mjs`，external 为 `@opencode/*`、`@opentui/*`、`solid-js`）。
@@ -35,21 +35,25 @@ npm test           # npm run compile && node --test test/*.test.mjs
    - 第一遍同时捕获用户声明的 `settings.baseURL` 到模块级 `configuredBaseURL`，使 VPC 路由对模型发现生效。
    - 第一遍之后调用 `refreshModelSource(ctx)`（`GET /algo/api/v2/model/list`），第二遍用 `editor.models.set` 注入模型；用户手动声明的同 ID 模型优先。
    - 注入的模型 ID 记录在 `injectedModelIDs`，刷新时只替换插件自己注入的条目，用户声明的条目（包括与发现模型同 ID 的）始终保留。
-2. **integration.transform**
+2. **ctx.rpc.register（`src/rpc.ts` 的 `qoder-auth` / `balance`）**
+   - TUI 进程拿不到凭据，积分余额由 server 端查询后经 RPC 返回。
+   - 两遍 provider.transform 之后注册，此时 `configuredBaseURL` 已就绪，余额与模型发现走同一套公网/VPC 端点。
+   - 未登录或非 `pt-` 凭据时返回 `ok: false` + 中文提示，不抛错。
+3. **integration.transform**
    - 注册 `key` 方法（PAT `pt-...`，无 `id`）和 `env` 方法（`QODERCN_PERSONAL_ACCESS_TOKEN`、`QODERCN_PAT`、`QODER_API_KEY`）。
    - `integration.name = "Qoder"`。
-3. **session.hook("http.request", …, { providerID: "qoder" })**
+4. **session.hook("http.request", …, { providerID: "qoder" })**
    - 从 `authorization` 读取宿主注入的 PAT；缺失时回退 `ctx.integration.connection.active()/resolve()`，再回退环境变量。
    - 校验 PAT 以 `pt-` 开头（`isQoderPatValue`）。
    - `buildQoderChatRequest`：OpenAI body → Qoder envelope → WAF 编码 → COSY 签名 → 新 `Request`。
    - 用 `X-Qoder-Request-Id` 和 `WeakMap<Request>` 保存 `QoderRequestMeta`，供响应 hook 使用。
    - 已带 `x-qoder-request-id` 的请求直接跳过（宿主可能重放 hook）。
-4. **session.hook("http.response", …)**
+5. **session.hook("http.response", …)**
    - 通过 `X-Qoder-Request-Id` / WeakMap 找回 meta，并立即从 Map 删除（WeakMap 仍在）。
    - HTTP 401/403、JSON body 的 `code 105`、或 SSE 首帧的 401/403 / `code 105` → 失效缓存、强制重新 exchange、`resignQoderRequest` 重签同一份已编码 body、`fetch` 重试一次。
    - 非 SSE 的 JSON 错误转成 OpenAI `error` 结构。
    - 正常 SSE → `transformQoderResponse`。
-5. **event.subscribe**
+6. **event.subscribe**
    - 监听 `credential.updated` / `credential.switched`，按 `location.directory` 和 `integrationID` 过滤。
    - 重新发现模型，成功后 `ctx.provider.reload()`。
    - cleanup 时 abort subscription 并清空请求 Map。
@@ -63,12 +67,14 @@ npm test           # npm run compile && node --test test/*.test.mjs
 | `src/pat.ts` | PAT exchange、job-token refresh、userinfo |
 | `src/session.ts` | job-token / identity 缓存与轮换 |
 | `src/models.ts` | `/model/list` 解析、`Model.Info` 映射、推理变体 |
+| `src/quota.ts` | `/quota/usage` 积分余额、额度池聚合、套餐名 |
+| `src/rpc.ts` | server / TUI 共享的 RPC 契约 |
 | `src/request.ts` | OpenAI body → Qoder envelope、WAF 编码、签名、重签 |
 | `src/stream.ts` | Qoder SSE → OpenAI SSE、认证探测、错误/空响应保护 |
 | `src/qoder-encoding.ts` | WAF body 编解码 |
 | `src/thinking-parser.ts` | `<thinking>` 等标签的流式拆分 |
 | `src/errors.ts` | `QoderError`、状态分类、`code 105` 判定 |
-| `src/tui.tsx` | TUI 侧边栏模型目录 |
+| `src/tui.tsx` | TUI 侧边栏积分余额面板 |
 
 ## 线路协议（wire facts）
 
@@ -80,6 +86,8 @@ npm test           # npm run compile && node --test test/*.test.mjs
 - PAT exchange：`POST ${openapi}/api/v1/jobToken/exchange`，body `{ personal_token }`
 - Refresh：`POST ${openapi}/api/v1/jobToken/refresh`，body `{ refresh_token }`
 - Userinfo：`GET ${openapi}/api/v1/userinfo`，`Authorization: Bearer <jobToken>`
+- 积分余额：`GET ${openapi}/api/v2/quota/usage`，普通 `Bearer <jobToken>`（**不需要 COSY**；PAT 直连会被拒为 `TOKEN_EXPIRE`）
+- 套餐名：`GET ${openapi}/api/v2/user/plan` → `plan_tier_name`（如 `Free`）
 - Qoder SSE：`data: {"statusCodeValue":200,"body":"<JSON 字符串或 [DONE]>"}`；结束可能是 `data: [DONE]`，也可能直接 EOF。
 - COSY 签名覆盖 **WAF 编码后的 body**；`Cosy-Sigpath` 去掉 `/algo` 前缀。
 - `Authorization: Bearer COSY.<base64(payload)>.<md5(payloadB64\ncosyKey\ntimestamp\nbody\nsigPath)>`
@@ -99,6 +107,15 @@ npm test           # npm run compile && node --test test/*.test.mjs
 - `Model.Info` 是只读窄类型；模块内用 `DeepMutable` 后再赋值。
 - 发现失败返回 `undefined`（保留旧列表）；未登录返回 `[]`（不暴露模型）。
 
+## 积分余额
+
+- 数据源：`GET {openapi}/api/v2/quota/usage`，普通 `Bearer <jobToken>`；余额查询复用 `session.ts` 的 job token 缓存，401/403 或 `code 105` 时失效并重新 exchange 一次。
+- 聚合：`userQuota`（套餐额度）+ `addOnQuota`（赠送/签到额度）的 `remaining`/`used`/`total` 相加。
+- 共享池：`orgResourcePackage` / `sharedQuota` / `teamQuota` / `poolQuota` 等键命中即视为团队账号；`available === false` 或 `cap < 0`（不设上限的哨兵值）不计入余额，只在 UI 上标注「共享额度」。
+- 进度：优先 `used / total`，容量为 0 时回退 `totalUsagePercentage * 100`。
+- 退化 body（`userQuota` 与 `addOnQuota` 都缺失，或 `isQuotaExceeded` 且容量与余额都为 0）按错误处理，不显示成 0 积分；真正耗尽（有容量、`remaining = 0`）正常显示。
+- 前端：TUI 侧边栏通过 RPC `qoder-auth` / `balance` 取值（TUI 进程不读凭据），`ok: false` 时显示 `error` 文案，不保留旧数值。刷新时机为挂载、5 分钟定时、`credential.updated` / `credential.switched`、当前 `session.idle`，以及点击标题。
+
 ## 请求构造
 
 - 系统/开发者消息提升到顶层 `system`。
@@ -112,7 +129,8 @@ npm test           # npm run compile && node --test test/*.test.mjs
 
 - 测试从 `../dist/*.js` 导入，修改源码后必须 `npm run compile`。
 - 测试会替换 `globalThis.fetch`；使用 `clearQoderSessionCaches()` 清理模块级 token/identity 缓存。
-- `test/plugin.test.mjs` 用 mock context 模拟 `provider.transform`、`integration.transform`、`session.hook`、`event.subscribe`。
+- `test/plugin.test.mjs` 用 mock context 模拟 `provider.transform`、`integration.transform`、`session.hook`、`rpc.register`、`event.subscribe`。
+- `test/quota.test.mjs` 覆盖额度聚合与退化 body；插件测试从 mock 的 `state.rpc.balance` 调 RPC 处理器，断言 `ok` / 余额 / 套餐名。
 - mock 的 `provider.transform` 是同步立即执行的；真实宿主可能延迟执行，但两遍 transform 的设计对两种时序都成立。
 - 插件测试中通过 `createContext({ providerBaseURL })` 显式声明 baseURL，避免模块级 `configuredBaseURL` 在测试之间泄漏。
 - 新增 VPC/端点相关测试时，注意 `resolveQoderEndpoints` 优先读环境变量；`test/cosy.test.mjs` 的 `withEnv` 会保存/恢复环境。
@@ -120,6 +138,8 @@ npm test           # npm run compile && node --test test/*.test.mjs
 ## 已知坑 / 注意点
 
 - **不要用 `build` / `prepare` 作为脚本名**：bun 安装 git 依赖时会执行 `prepare`（没有时回退 `build`），而 opencode 内嵌运行环境里这一步必然失败，报 `NpmInstallFailedError: git dep preparation failed`。构建脚本命名为 `compile`。
+- **TUI 进程不碰凭据**：余额由 server 端的 `ctx.rpc.register`（RPC id = 插件 id `qoder-auth`）提供，TUI 用 `context.client.rpc(qoderBalanceRpc).balance({})` 调用；未注册时宿主报 `rpc.unavailable`。`client.credential.list()` 虽然能读到明文 key，但只适合临时排查，不要写进 TUI 逻辑。
+- **余额接口不带 COSY**：`/api/v2/quota/usage` 走 OpenAPI 的普通 `Bearer <jobToken>`；给 PAT 或 COSY 头都不行，PAT 直连返回 `TOKEN_EXPIRE`。
 - **`dist/` 只能由 CI 提交**：git 安装不会构建，仓库里必须有 `dist/`，但它属于生成物。本地 `npm run compile` 只为跑测试和联调，不要 `git add dist`；main 合入后 `dist-commit` 作业会自动构建并推送（带 `[skip ci]`）。因此刚合入的几分钟内 main 上的 `dist/` 可能落后于 `src/`，打 tag 或对外宣称版本时要等这个作业跑完。
 - **`[DONE]` 必须绕过 `terminal` 守卫**：`stream.ts` 的 `enqueue` 在 `terminal` 为 true 后丢弃数据；终止哨兵用单独的 `emitDone()` 直接 `controller.enqueue`。
 - **SSE 首帧探测必须等到换行**：首个网络 chunk 可能把 `data:` JSON 截断；`peekQoderSseAuth` 先累积到出现 `\n` 再解析，EOF 时再做一次兜底解析。

@@ -68,6 +68,8 @@ function createContext({
     methods: new Map(),
     hooks: new Map(),
     reloads: 0,
+    rpc: undefined,
+    rpcDefinition: undefined,
   };
   if (providerBaseURL) {
     state.providers.set("qoder", {
@@ -151,6 +153,12 @@ function createContext({
         state.hooks.set(name, { fn, options });
       },
     },
+    rpc: {
+      register: async (definition, handlers) => {
+        state.rpcDefinition = definition;
+        state.rpc = handlers;
+      },
+    },
     event: {
       subscribe: ({ signal }) => {
         signal.addEventListener("abort", () => events.abort());
@@ -175,7 +183,7 @@ async function withFetch(mock, fn) {
 }
 
 function modelListFetch({ onChat } = {}) {
-  const calls = { exchanges: 0, userinfo: 0, lists: 0, chats: 0 };
+  const calls = { exchanges: 0, userinfo: 0, lists: 0, chats: 0, quotas: 0, plans: 0 };
   const fetch = async (url) => {
     const target = typeof url === "string" ? url : url.url;
     if (target.endsWith("/jobToken/exchange")) {
@@ -193,6 +201,18 @@ function modelListFetch({ onChat } = {}) {
     if (target.endsWith("/algo/api/v2/model/list")) {
       calls.lists++;
       return jsonResponse(CATALOG);
+    }
+    if (target.endsWith("/api/v2/quota/usage")) {
+      calls.quotas++;
+      return jsonResponse({
+        isQuotaExceeded: false,
+        userQuota: { total: 0, used: 0, remaining: 0 },
+        addOnQuota: { total: 200, used: 51, remaining: 149 },
+      });
+    }
+    if (target.endsWith("/api/v2/user/plan")) {
+      calls.plans++;
+      return jsonResponse({ plan_tier_name: "Free", user_type: "personal_standard" });
     }
     if (target.includes("/agent_chat_generation")) {
       calls.chats++;
@@ -253,6 +273,63 @@ test("registers the provider, integration methods, and hooks", async () => {
 
     await cleanup();
   });
+});
+
+test("serves the credit balance over plugin RPC", async () => {
+  const { fetch, calls } = modelListFetch();
+  await withFetch(fetch, async () => {
+    const { context, state } = createContext({
+      providerBaseURL: "https://gateway.qoder.com.cn",
+    });
+    const cleanup = await plugin.setup(context);
+
+    assert.ok(state.rpc?.balance, "balance handler must be registered");
+    assert.equal(state.rpcDefinition.id, "qoder-auth");
+    assert.deepEqual(Object.keys(state.rpcDefinition.methods), ["balance"]);
+
+    const balance = await state.rpc.balance(
+      {},
+      { signal: new AbortController().signal },
+    );
+    assert.equal(balance.ok, true);
+    assert.equal(balance.remaining, 149);
+    assert.equal(balance.used, 51);
+    assert.equal(balance.total, 200);
+    assert.equal(balance.plan, "Free");
+    assert.equal(calls.quotas, 1);
+    assert.equal(calls.plans, 1);
+
+    await cleanup();
+  });
+});
+
+test("reports an unauthenticated balance over RPC", async () => {
+  const { fetch } = modelListFetch();
+  const saved = {
+    QODERCN_PERSONAL_ACCESS_TOKEN: process.env.QODERCN_PERSONAL_ACCESS_TOKEN,
+    QODERCN_PAT: process.env.QODERCN_PAT,
+    QODER_API_KEY: process.env.QODER_API_KEY,
+  };
+  for (const name of Object.keys(saved)) delete process.env[name];
+  try {
+    await withFetch(fetch, async () => {
+      const { context, state } = createContext({ pat: "" });
+      const cleanup = await plugin.setup(context);
+
+      const balance = await state.rpc.balance(
+        {},
+        { signal: new AbortController().signal },
+      );
+      assert.equal(balance.ok, false);
+      assert.match(balance.error, /未登录 Qoder/);
+
+      await cleanup();
+    });
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value !== undefined) process.env[name] = value;
+    }
+  }
 });
 
 test("discovers models through a user-declared VPC baseURL", async () => {
