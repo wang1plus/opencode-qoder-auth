@@ -138,5 +138,6 @@ npm test           # npm run compile && node --test test/*.test.mjs
 
 - OpenCode v2.1.4，命令 `opencode`。
 - npm registry 使用国内镜像 `https://registry.npmmirror.com`。
-- 仓库当前未配置 remote；README 中的安装地址假设为 `github:wang1plus/opencode-qoder-auth`，如实际仓库不同需同步修改。
+- remote 为 `git@github.com:wang1plus/opencode-qoder-auth`，README 的安装地址 `github:wang1plus/opencode-qoder-auth` 与实际一致。
+- 安装走 git spec；`dist/` 已提交进仓库，改完源码要么本地 `npm run compile` 一起提交，要么交给 CI 自动补。
 - 所有源码与文档改动默认保持未提交，提交前检查 `git status`。
