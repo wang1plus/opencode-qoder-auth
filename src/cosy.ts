@@ -395,5 +395,3 @@ export function buildQoderAuthHeaders(
     "X-Request-Id": crypto.randomUUID(),
   };
 }
-
-// ci-probe: temporary marker to verify auto dist rebuild
